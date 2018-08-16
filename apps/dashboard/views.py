@@ -5,8 +5,6 @@ import bcrypt
 
 def index(request):
     return render(request, 'dashboard/index.html')
-# Create your views here.
-
 
 # render the sign in page form
 def signin_page(request):
@@ -21,7 +19,7 @@ def logout(request):
 def register_page(request):
     return render(request, 'dashboard/register_page.html')
 
-# render the sign in page form
+# render the users dashbord
 def dashboard(request):
     # check if user id exist in session
     if 'user_id' not in request.session:
@@ -38,12 +36,12 @@ def dashboard(request):
         return render(request, 'dashboard/user_dashboard.html', {'users': users, 'mydata': mydata})
 
 
-# render the sign in page form
+# render the add new user in page form
 def new_user_page(request):
     # return render(request, 'dashboard/user_dashboard.html')
     return render(request, 'dashboard/new_user_page.html')
 
-# render the sign in page form
+# render the edit profile form
 def edit_profile_page(request, id):
     try:
         user = User.objects.get(id = id)
@@ -58,7 +56,7 @@ def update_personal(request):
     # check if this is a POST request
     if request.method != 'POST':
         return redirect('/')
-    
+    # get the user object
     try:
         user = User.objects.get(id = int(request.POST['id']))
     except:
@@ -78,7 +76,7 @@ def update_password(request):
     # check if this is a POST request
     if request.method != 'POST':
         return redirect('/')
-    
+    # get the user objects
     try:
         user = User.objects.get(id = int(request.POST['id']))
     except:
@@ -104,7 +102,7 @@ def update_description(request):
     # check if this is a POST request
     if request.method != 'POST':
         return redirect('/')
-    
+    # get the user object
     try:
         user = User.objects.get(id = int(request.POST['id']))
     except:
@@ -120,7 +118,10 @@ def update_description(request):
 
 # show the user information and messages
 def show(request, id):
-
+    # check if the user is login
+    if 'user_id' not in request.session:
+        return redirect('/')
+    
     user = User.objects.get(id = id) # get the user information
 
     user_messages = user.received_messages.all() # get the user received messages
@@ -128,8 +129,8 @@ def show(request, id):
     messages_with_comments = [] # list to get all the messages with thier comments
     
     for msg in user_messages: # loop through each message object to be able to get their comments
-        m = Message.objects.get(id = msg.id) # get this message id
-        comments = m.message_comments.all() # use the message id to get all its comments
+        m = Message.objects.get(id = msg.id) # get this message object
+        comments = m.message_comments.all() # use the message object to get all its comments
         
         # get the user that send the message name
         u = User.objects.get(sent_messages = msg)
@@ -138,7 +139,7 @@ def show(request, id):
         new_comments = []
         for comment in comments:
             u = User.objects.get(post_comments = comment) # get the user who post this comment
-            # make a new comment with the comments first and last name
+            # make a new comment with the commenter user first and last name
             tem_comment = {
                 'comment': comment.comment,
                 'commenter_id': u.id,
@@ -166,8 +167,11 @@ def show(request, id):
 
 
 
-# remove a user
+# admin only method to remove a user from the database 
 def destroy(request, id):
+    # check if the user login
+    if 'user_id' not in request.session:
+        return redirect('/')
     try:
         user = User.objects.get(id = id)
     except:
@@ -176,8 +180,6 @@ def destroy(request, id):
 
     messages.success(request, "A user has been successfully remove from the system")
     return redirect('/dashboard')
-
-
 
 
 
@@ -198,11 +200,11 @@ def register_me(request):
             request.session['last_name'] = request.POST['last_name']
             request.session['email'] = request.POST['email']
         
+        # check if the user is login or not, if the user is login, that mean it an admin user
         if 'user_id' not in request.session:
             return redirect('/register')
         else:
             return redirect('/new')
-    
     else:
         # check email already exist in the database
         user = User.objects.filter(email = request.POST['email'])
@@ -222,10 +224,15 @@ def register_me(request):
             email = request.POST['email'],
             password = hash_pw
         )
-    messages.success(request, 'You have successfull register', 'register')
+    
     # New a user has been successfully register
-    request.session.clear()
-    request.session['user_id'] = user.last().id
+    messages.success(request, 'You have successfull register', 'register')
+    
+    # check if it is the admin creating a new user
+    if 'user_id' not in request.session:
+        request.session.clear()
+        request.session['user_id'] = user.last().id
+        return redirect('/dashboard')
     return redirect('/dashboard')
 
 
@@ -235,23 +242,21 @@ def login(request):
         messages.error(request, '*You must logged in first', 'login')
         return redirect('/')
     
-    # no validation error so fetch the user data
+    # no validation error, so fetch the user data
     user = User.objects.filter(email = request.POST['email'])
     if not user: # if the user email doesn't exist redirect it back with error
         messages.error(request, '*Email or password is invalid', 'login')
         return redirect('/signin')
 
-    user = user[0] # since it is a list, get the first element
-    if bcrypt.checkpw(request.POST['password'].encode(), user.password.encode()):
-        # password match so loggedthe user in 
-        request.session['user_id'] = user.id
-        return redirect('/dashboard')
-    else:
+    user = user[0] # since it is a list with only one element, get the first element
+    if not bcrypt.checkpw(request.POST['password'].encode(), user.password.encode()):
         # password did not match so redirect the user back to fix the error
         messages.error(request, '*Email or password is invalid', 'login')
         return redirect('/signin')
-
-
+        
+    # password match so logged the user in 
+    request.session['user_id'] = user.id
+    return redirect('/dashboard')
 
 
 
@@ -262,8 +267,8 @@ def send_message(request):
         request.session.clear()
         return redirect('/')
 
-    sender = User.objects.get(id = int(request.POST['sender_id'])) # the sender object from the database models
-    receiver = User.objects.get(id = int(request.POST['receiver_id'])) # the receiver object from the database models
+    sender = User.objects.get(id = int(request.POST['sender_id'])) # get the sender object from the database models
+    receiver = User.objects.get(id = int(request.POST['receiver_id'])) # get the receiver object from the database models
 
     # Send the message now 
     Message.objects.create(message=request.POST['message'], sender=sender, receiver=receiver)
@@ -281,7 +286,7 @@ def post_comment(request):
     commenter = User.objects.get(id = int(request.POST['commenter_id'])) # the commenter object from the database models
     message = Message.objects.get(id = int(request.POST['message_id'])) # the message being commented on object from the database models
 
-    # Post the message now
+    # Post the comment now
     Comment.objects.create(comment=request.POST['comment'], message=message, commenter=commenter)
     messages.success(request, 'Comment Post!')
     return redirect('/show/'+request.POST['receiver_id'])
